@@ -76,6 +76,15 @@ func (r *Repository) RepoDir() string {
 	return r.Dir
 }
 
+// checkSpecArgSafety returns a non-nil err if spec begins with a "-", which
+// could cause it to be interpreted as a hg command line argument.
+func checkSpecArgSafety(spec string) error {
+	if strings.HasPrefix(spec, "-") {
+		return errors.New("invalid hg revision spec (begins with '-')")
+	}
+	return nil
+}
+
 func (r *Repository) ResolveRevision(spec string) (vcs.CommitID, error) {
 	cmd := exec.Command("hg", "identify", "--debug", "-i", "--rev="+spec)
 	cmd.Dir = r.Dir
@@ -88,6 +97,26 @@ func (r *Repository) ResolveRevision(spec string) (vcs.CommitID, error) {
 		return "", fmt.Errorf("exec `hg identify` failed: %s. Output was:\n\n%s", err, out)
 	}
 	return vcs.CommitID(bytes.TrimSpace(out)), nil
+}
+
+func (r *Repository) ListFiles(at vcs.CommitID) ([]string, error) {
+  if err := checkSpecArgSafety(string(at)); err != nil {
+		return nil, err
+	}
+  if at == "" {
+    at = "tip"
+  }
+  cmd := exec.Command("hg", "status", "-0", "-n", "--rev", at)
+  cmd.Dir = r.Dir
+  out, err := cmd.Output()
+  if err != nil {
+		return nil, fmt.Errorf("exec `hg status -0 -n --rev %v` failed: %v", at, err)
+	}
+	if len(out) == 0 {
+		return []string{}, nil
+	}
+	out = bytes.TrimSuffix(out, []byte("\x00"))
+	return strings.Split(string(out), "\x00"), nil
 }
 
 func (r *Repository) ResolveTag(name string) (vcs.CommitID, error) {
